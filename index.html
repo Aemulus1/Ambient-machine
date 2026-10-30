@@ -1,3 +1,381 @@
-<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>THE AMBIENT MACHINE v0.1</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#080b15;color:#e5ecff;font:15px system-ui,-apple-system,sans-serif}.wrap{max-width:980px;margin:auto;padding:22px}header{display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:clamp(20px,4vw,32px);letter-spacing:.12em;margin:0}small,.muted{color:#94a2c0}.screen{position:relative;background:radial-gradient(ellipse at center,#121b34,#070a12 72%);border:1px solid #263552;border-radius:18px;overflow:hidden;margin:20px 0 14px}canvas{display:block;width:100%;height:360px}.overlay{position:absolute;bottom:16px;left:20px;right:20px;display:flex;justify-content:space-between;color:#a9bbdf;font-size:12px;pointer-events:none}.panel{background:#101827;border:1px solid #29344c;border-radius:16px;padding:18px}.controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}label{display:flex;justify-content:space-between;margin-bottom:8px}input[type=range]{width:100%;accent-color:#91aaff}button{border:0;border-radius:10px;padding:12px 22px;background:#91aaff;color:#091021;font-weight:800;cursor:pointer}button:disabled{opacity:.5}button.secondary{background:#293752;color:#dce7ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0}.status{color:#b8c8e6}footer{color:#7586a4;font-size:12px;margin:18px 0}@media(max-width:560px){.controls{grid-template-columns:1fr}canvas{height:290px}.wrap{padding:14px}}</style></head><body><div class="wrap"><header><div><h1>THE AMBIENT MACHINE</h1><small>v0.1 · FIRST PULSE · generative sound ecosystem</small></div><small>Built by Kris &amp; Omnia</small></header><div class="screen"><canvas id="viz"></canvas><div class="overlay"><span id="scene">SILENCE</span><span id="measure">BAR —</span></div></div><div class="actions"><button id="start">▶ START</button><button id="stop" class="secondary" disabled>■ STOP</button><span class="status" id="status">Klaar om te ontwaken</span></div><div class="panel"><div class="controls"><div><label>Tempo <output id="bpmV">91 BPM</output></label><input id="bpm" type="range" min="55" max="140" value="91"></div><div><label>Klankdichtheid <output id="densityV">35%</output></label><input id="density" type="range" min="0" max="100" value="35"></div><div><label>Evolutie <output id="evolutionV">55%</output></label><input id="evolution" type="range" min="0" max="100" value="55"></div><div><label>Echo / Reverb <output id="reverbV">65%</output></label><input id="reverb" type="range" min="0" max="100" value="65"></div></div></div><footer>Autonome compositie · Web Audio API · geen internet of samples nodig · start vereist een tik/klik wegens browser-audiobeveiliging.</footer></div><script>
-(()=>{'use strict';const $=id=>document.getElementById(id);let ctx,master,dry,wet,delay,feedback,filter,noiseBuffer,started=false,timer=null,step=0,nextTime=0,energy=0,bar=0,seed=0,mode=0,lastPitch=0;let bpm=91,density=.35,evolution=.55,reverb=.65;const notes=[0,2,3,5,7,10],chords=[[0,3,7],[5,8,12],[3,7,10],[7,10,14]],root=43;const random=(a,b)=>a+Math.random()*(b-a),choose=a=>a[Math.floor(Math.random()*a.length)],hz=m=>440*Math.pow(2,(m-69)/12);const canvas=$('viz'),g=canvas.getContext('2d');let width=0,height=0;function resize(){const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(r.width*d);canvas.height=Math.round(r.height*d);g.setTransform(d,0,0,d,0,0);width=r.width;height=r.height}window.addEventListener('resize',resize);resize();function makeNoise(){noiseBuffer=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);const a=noiseBuffer.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=Math.random()*2-1}function impulse(){let len=Math.round(ctx.sampleRate*3.4),b=ctx.createBuffer(2,len,ctx.sampleRate);for(let c=0;c<2;c++){let d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.9)}return b}function setup(){ctx=new(window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=.66;const compressor=ctx.createDynamicsCompressor();compressor.threshold.value=-20;compressor.knee.value=22;compressor.ratio.value=3;master.connect(compressor);compressor.connect(ctx.destination);dry=ctx.createGain();dry.gain.value=.8;dry.connect(master);wet=ctx.createGain();wet.connect(master);const con=ctx.createConvolver();con.buffer=impulse();con.connect(wet);const revSend=ctx.createGain();revSend.connect(con);delay=ctx.createDelay(2);delay.delayTime.value=60/bpm*.75;feedback=ctx.createGain();feedback.gain.value=.27;delay.connect(feedback);feedback.connect(delay);const echoOut=ctx.createGain();echoOut.gain.value=.18;delay.connect(echoOut);echoOut.connect(wet);filter=ctx.createBiquadFilter();filter.type='lowpass';filter.frequency.value=3600;filter.connect(dry);filter.connect(revSend);filter.connect(delay);makeNoise();updateFx()}function updateFx(){if(!ctx)return;wet.gain.setTargetAtTime(.25+reverb*.35,ctx.currentTime,.1);feedback.gain.setTargetAtTime(.12+reverb*.27,ctx.currentTime,.1);delay.delayTime.setTargetAtTime(60/bpm*.75,ctx.currentTime,.1)}function env(g,t,attack,hold,release,peak){g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(peak,t+attack);g.gain.setValueAtTime(peak,t+attack+hold);g.gain.exponentialRampToValueAtTime(.0001,t+attack+hold+release)}function osc(freq,t,dur,type='sine',vol=.1,attack=.02,dest=filter){const o=ctx.createOscillator(),a=ctx.createGain();o.type=type;o.frequency.setValueAtTime(freq,t);o.connect(a);a.connect(dest);env(a,t,attack,Math.max(.01,dur-attack-.3),.3,vol);o.start(t);o.stop(t+dur+.15);return o}function kick(t){const o=ctx.createOscillator(),a=ctx.createGain();o.type='sine';o.frequency.setValueAtTime(125,t);o.frequency.exponentialRampToValueAtTime(44,t+.22);o.connect(a);a.connect(dry);a.gain.setValueAtTime(.0001,t);a.gain.exponentialRampToValueAtTime(.5,t+.009);a.gain.exponentialRampToValueAtTime(.0001,t+.5);o.start(t);o.stop(t+.52);pulse(t,.9)}function hat(t){const s=ctx.createBufferSource(),f=ctx.createBiquadFilter(),a=ctx.createGain();s.buffer=noiseBuffer;f.type='highpass';f.frequency.value=6000;s.connect(f);f.connect(a);a.connect(dry);env(a,t,.004,.005,.09,.025);s.start(t);s.stop(t+.12);pulse(t,.15)}function bell(t,m){const f=hz(m);osc(f,t,1.7,'sine',.09,.004);osc(f*2.01,t,1.0,'sine',.027,.003);osc(f*3.99,t,.5,'sine',.009,.003);pulse(t,.35)}function pad(t,notes){notes.forEach((n,i)=>{const f=hz(n);const o=ctx.createOscillator(),a=ctx.createGain(),lp=ctx.createBiquadFilter();o.type=i===1?'triangle':'sine';o.frequency.setValueAtTime(f,t);o.detune.value=random(-5,5);lp.type='lowpass';lp.frequency.setValueAtTime(random(600,1200),t);o.connect(lp);lp.connect(a);a.connect(filter);a.gain.setValueAtTime(.0001,t);a.gain.linearRampToValueAtTime(.048,t+1.5);a.gain.setValueAtTime(.048,t+4.8);a.gain.linearRampToValueAtTime(.0001,t+8.2);o.start(t);o.stop(t+8.25)});pulse(t,.3)}function bass(t,m){osc(hz(m),t,.7,'triangle',.06,.015);pulse(t,.23)}let pulses=[];function pulse(t,strength){pulses.push({t,s:strength});if(pulses.length>80)pulses.shift()}function schedule(t,s){const pos=s%16;if(pos===0){bar++;$('measure').textContent='BAR '+bar;if(bar===1){$('scene').textContent='FIRST PULSE'}else if(bar<3){$('scene').textContent='AWAKENING'}else{$('scene').textContent=['BLOOM','DRIFT','RESONANCE','STARDUST'][mode]};if(bar>2&&bar%8===1&&Math.random()<evolution){mode=(mode+choose([1,1,2]))%4;seed=(seed+choose([-1,1]))%chords.length}if(bar>2&&bar%4===1){seed=(seed+1+chords.length)%chords.length}if(bar>=3&&bar%4===1)pad(t,chords[seed].map(n=>root+n+12));}if(s===0)kick(t);if(bar>1&&pos===8&&Math.random()<.45+density*.4)kick(t);if(bar>2&&pos%4===2&&Math.random()<density*.6)hat(t);if(bar>2&&pos===0&&Math.random()<density*.8)bass(t,root+chords[seed][0]-12);if(bar>2&&pos%4===0&&Math.random()<density*.2){const allowed=chords[seed].map(n=>root+n+24);let n=choose(allowed);if(Math.random()<.65)n=allowed.reduce((a,b)=>Math.abs(a-lastPitch)<Math.abs(b-lastPitch)?a:b);lastPitch=n;bell(t,n)}if(bar>3&&pos===12&&Math.random()<density*.5)bell(t,root+choose(chords[seed])+24)}function tick(){if(!started||!ctx)return;let now=ctx.currentTime;while(nextTime<now+.16){schedule(nextTime,step);step++;nextTime+=60/bpm/4}if(nextTime<now-.5)nextTime=now+.04}async function start(){if(started)return;try{if(!ctx)setup();await ctx.resume();started=true;step=0;bar=0;mode=0;seed=Math.floor(Math.random()*4);nextTime=ctx.currentTime+.08;pulses=[];timer=setInterval(tick,25);tick();$('start').disabled=true;$('stop').disabled=false;$('status').textContent='De machine componeert…'}catch(e){$('status').textContent='Audio kon niet starten: '+e.message}}async function stop(){if(!started)return;started=false;clearInterval(timer);timer=null;await ctx.suspend();$('start').disabled=false;$('stop').disabled=true;$('scene').textContent='SILENCE';$('status').textContent='Gestopt · druk START om opnieuw te beginnen'}$('start').onclick=start;$('stop').onclick=stop;[['bpm',v=>{bpm=+v;updateFx();}],['density',v=>density=v/100],['evolution',v=>evolution=v/100],['reverb',v=>{reverb=v/100;updateFx()}]].forEach(([id,fn])=>{$(id).addEventListener('input',e=>{fn(+e.target.value);$(id+'V').textContent=e.target.value+(id==='bpm'?' BPM':'%')})});function draw(now){requestAnimationFrame(draw);const w=width,h=height;g.clearRect(0,0,w,h);g.fillStyle='#080d1a';g.fillRect(0,0,w,h);const t=now*.001;let intensity=0;if(started&&ctx){const ct=ctx.currentTime;pulses=pulses.filter(p=>ct-p.t<1.4);for(const p of pulses){const age=ct-p.t;if(age>=0)intensity+=p.s*Math.exp(-age*5)}energy=energy*.86+intensity*.14}else energy*=.95;const cx=w/2,cy=h/2,r=Math.min(w*.23,h*.32),shape=2+mode*1.25+(started?Math.sin(t*.12)*.17:0);for(let k=0;k<19;k++){const hue=195+k*5+mode*14;g.beginPath();for(let i=0;i<=420;i++){const a=i/420*Math.PI*2;const rr=r*(.62+.29*Math.cos(shape*a+k*.05))*(1+energy*.13)+k*.6;const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);if(i===0)g.moveTo(x,y);else g.lineTo(x,y)}g.closePath();g.strokeStyle=`hsla(${hue},95%,${62+k*.7}%,${.12+k*.019+energy*.035})`;g.lineWidth=.75+(k%5===0?.6:0);g.stroke()}const glow=g.createRadialGradient(cx,cy,1,cx,cy,r*1.5);glow.addColorStop(0,`rgba(100,180,255,${.045+energy*.1})`);glow.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=glow;g.fillRect(0,0,w,h)}requestAnimationFrame(draw);})();
+<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>THE AMBIENT MACHINE v0.20</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#080b15;color:#e5ecff;font:15px system-ui,-apple-system,sans-serif}.wrap{max-width:980px;margin:auto;padding:22px}header{display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:clamp(20px,4vw,32px);letter-spacing:.12em;margin:0}small,.muted{color:#94a2c0}.screen{position:relative;background:radial-gradient(ellipse at center,#121b34,#070a12 72%);border:1px solid #263552;border-radius:18px;overflow:hidden;margin:20px 0 14px}canvas{display:block;width:100%;height:440px}.overlay{position:absolute;bottom:16px;left:20px;right:20px;display:flex;justify-content:space-between;color:#a9bbdf;font-size:12px;pointer-events:none}.panel{background:#101827;border:1px solid #29344c;border-radius:16px;padding:18px}.controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}label{display:flex;justify-content:space-between;margin-bottom:8px}input[type=range]{width:100%;accent-color:#91aaff}button{border:0;border-radius:10px;padding:12px 22px;background:#91aaff;color:#091021;font-weight:800;cursor:pointer}button:disabled{opacity:.5}button.secondary{background:#293752;color:#dce7ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0}.status{color:#b8c8e6}footer{color:#7586a4;font-size:12px;margin:18px 0}@media(max-width:560px){.controls{grid-template-columns:1fr}canvas{height:330px}.wrap{padding:14px}}</style></head><body><div class="wrap"><header><div><h1>THE AMBIENT MACHINE</h1><small>v0.20 · LIVING CARDIOID · generative sound ecosystem</small></div><small>Built by Kris &amp; Omnia</small></header><div class="screen"><canvas id="viz"></canvas><div class="overlay"><span id="scene">SILENCE</span><span id="measure">BAR —</span></div></div><div class="actions"><button id="start">▶ START</button><button id="stop" class="secondary" disabled>■ STOP</button><button id="drumDelay" class="secondary" title="Alleen drums: echo na een halve of een derde tel">Drumdelay: UIT</button><span class="status" id="status">Klaar om te ontwaken</span></div><div class="panel"><div class="controls"><div><label>Tempo <output id="bpmV">91 BPM</output></label><input id="bpm" type="range" min="55" max="140" value="91"></div><div><label>Klankdichtheid <output id="densityV">35%</output></label><input id="density" type="range" min="0" max="100" value="35"></div><div><label>Evolutie <output id="evolutionV">55%</output></label><input id="evolution" type="range" min="0" max="100" value="55"></div><div><label>Echo / Reverb <output id="reverbV">65%</output></label><input id="reverb" type="range" min="0" max="100" value="65"></div></div></div><footer>Originele Omnia’s Cardioid Machine tekenmotor · continu draaiend · Web Audio API · geen internet of samples nodig · start vereist een tik/klik wegens browser-audiobeveiliging.</footer></div><script>
+(()=>{'use strict';const $=id=>document.getElementById(id);let ctx,master,dry,wet,delay,feedback,filter,noiseBuffer,started=false,timer=null,step=0,nextTime=0,energy=0,bar=0,seed=0,mode=0,lastPitch=0;let drumDelayMode=0,drumSend,drumEcho,drumFeedback,drumEchoOut;let bpm=91,density=.35,evolution=.55,reverb=.65;const notes=[0,2,3,5,7,10],chords=[[0,3,7],[5,8,12],[3,7,10],[7,10,14]],root=43;const random=(a,b)=>a+Math.random()*(b-a),choose=a=>a[Math.floor(Math.random()*a.length)],hz=m=>440*Math.pow(2,(m-69)/12);const canvas=$('viz'),g=canvas.getContext('2d');let width=0,height=0;function resize(){const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(r.width*d);canvas.height=Math.round(r.height*d);g.setTransform(d,0,0,d,0,0);width=r.width;height=r.height}window.addEventListener('resize',resize);resize();function makeNoise(){noiseBuffer=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);const a=noiseBuffer.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=Math.random()*2-1}function impulse(){let len=Math.round(ctx.sampleRate*3.4),b=ctx.createBuffer(2,len,ctx.sampleRate);for(let c=0;c<2;c++){let d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.9)}return b}function setup(){ctx=new(window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=.66;const compressor=ctx.createDynamicsCompressor();compressor.threshold.value=-20;compressor.knee.value=22;compressor.ratio.value=3;master.connect(compressor);compressor.connect(ctx.destination);dry=ctx.createGain();dry.gain.value=.8;dry.connect(master);wet=ctx.createGain();wet.connect(master);const con=ctx.createConvolver();con.buffer=impulse();con.connect(wet);const revSend=ctx.createGain();revSend.connect(con);delay=ctx.createDelay(2);delay.delayTime.value=60/bpm*.75;feedback=ctx.createGain();feedback.gain.value=.27;delay.connect(feedback);feedback.connect(delay);const echoOut=ctx.createGain();echoOut.gain.value=.18;delay.connect(echoOut);echoOut.connect(wet);filter=ctx.createBiquadFilter();filter.type='lowpass';filter.frequency.value=3600;filter.connect(dry);filter.connect(revSend);filter.connect(delay);setupDrumDelay();makeNoise();updateFx()}function setupDrumDelay(){drumSend=ctx.createGain();drumSend.gain.value=0;drumEcho=ctx.createDelay(2);drumFeedback=ctx.createGain();drumFeedback.gain.value=.24;drumEchoOut=ctx.createGain();drumEchoOut.gain.value=.32;drumSend.connect(drumEcho);drumEcho.connect(drumFeedback);drumFeedback.connect(drumEcho);drumEcho.connect(drumEchoOut);drumEchoOut.connect(dry);updateDrumDelay()}function updateDrumDelay(){if(!ctx||!drumSend)return;const t=ctx.currentTime;drumSend.gain.setTargetAtTime(drumDelayMode?1:0,t,.025);drumFeedback.gain.setTargetAtTime(.12+reverb*.68,t,.08);drumEcho.delayTime.setTargetAtTime(60/bpm*(drumDelayMode===2?1/3:1/2),t,.04);drumEchoOut.gain.setTargetAtTime(drumDelayMode?.32:0,t,.025)}$('drumDelay').onclick=()=>{drumDelayMode=(drumDelayMode+1)%3;$('drumDelay').textContent='Drumdelay: '+['UIT','1/2','1/3'][drumDelayMode];updateDrumDelay()};function updateFx(){if(!ctx)return;updateDrumDelay();wet.gain.setTargetAtTime(.25+reverb*.35,ctx.currentTime,.1);feedback.gain.setTargetAtTime(.12+reverb*.27,ctx.currentTime,.1);delay.delayTime.setTargetAtTime(60/bpm*.75,ctx.currentTime,.1)}function env(g,t,attack,hold,release,peak){g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(peak,t+attack);g.gain.setValueAtTime(peak,t+attack+hold);g.gain.exponentialRampToValueAtTime(.0001,t+attack+hold+release)}function osc(freq,t,dur,type='sine',vol=.1,attack=.02,dest=filter){const o=ctx.createOscillator(),a=ctx.createGain();o.type=type;o.frequency.setValueAtTime(freq,t);o.connect(a);a.connect(dest);env(a,t,attack,Math.max(.01,dur-attack-.3),.3,vol);o.start(t);o.stop(t+dur+.15);return o}function kick(t){const o=ctx.createOscillator(),a=ctx.createGain();o.type='sine';o.frequency.setValueAtTime(125,t);o.frequency.exponentialRampToValueAtTime(44,t+.22);o.connect(a);a.connect(dry);a.connect(drumSend);a.gain.setValueAtTime(.0001,t);a.gain.exponentialRampToValueAtTime(.5,t+.009);a.gain.exponentialRampToValueAtTime(.0001,t+.5);o.start(t);o.stop(t+.52);pulse(t,.9)}function hat(t){const s=ctx.createBufferSource(),f=ctx.createBiquadFilter(),a=ctx.createGain();s.buffer=noiseBuffer;f.type='highpass';f.frequency.value=6000;s.connect(f);f.connect(a);a.connect(dry);a.connect(drumSend);env(a,t,.004,.005,.09,.025);s.start(t);s.stop(t+.12);pulse(t,.15)}// v0.3: richer self-contained Web Audio instruments; cardioid engine untouched.
+// v0.17 additions: airy harmonic shimmer and occasional restrained acid.
+function shimmerPad(t,notes){
+ const duration=60/bpm*16+2;
+ notes.forEach((m,i)=>{
+  const a=ctx.createGain(),lp=ctx.createBiquadFilter();
+  lp.type='lowpass';lp.Q.value=1.35;lp.frequency.setValueAtTime(1550,t);
+  // Gentle tempo-synchronised wah, restricted to this pad voice.
+  const wah=ctx.createOscillator(),wahDepth=ctx.createGain();
+  wah.type='sine';wah.frequency.setValueAtTime(bpm/60/2,t);
+  wahDepth.gain.setValueAtTime(0,t);
+  wahDepth.gain.linearRampToValueAtTime(1000,t+duration*.25);
+  wahDepth.gain.setValueAtTime(1000,t+duration*.65);
+  wahDepth.gain.linearRampToValueAtTime(0,t+duration);
+  wah.connect(wahDepth);wahDepth.connect(lp.frequency);
+  wah.start(t);wah.stop(t+duration+.03);
+  lp.connect(a);a.connect(filter);
+  a.gain.setValueAtTime(.0001,t);
+  a.gain.linearRampToValueAtTime(.014,t+duration*.28);
+  a.gain.setValueAtTime(.014,t+duration*.6);
+  a.gain.linearRampToValueAtTime(.0001,t+duration);
+  [[1,.55,-5],[1,.55,5],[2,.16,2],[4,.035,-2]].forEach(([ratio,level,detune])=>{
+   const o=ctx.createOscillator(),v=ctx.createGain();
+   o.type='sine';o.frequency.value=hz(m)*ratio;o.detune.value=detune;
+   v.gain.value=level;o.connect(v);v.connect(lp);o.start(t);o.stop(t+duration+.03);
+  });
+ });
+}
+function acidNote(t,m,accent,phraseBar){
+ const duration=Math.min(.28,60/bpm*.42),o=ctx.createOscillator();
+ const lp=ctx.createBiquadFilter(),a=ctx.createGain();
+ o.type='sawtooth';o.frequency.setValueAtTime(hz(m),t);
+ lp.type='lowpass';lp.Q.value=3.4;
+ const openness=[380,620,850,480][phraseBar];
+ lp.frequency.setValueAtTime(230,t);
+ lp.frequency.exponentialRampToValueAtTime(openness*(accent?1.3:1),t+.025);
+ lp.frequency.exponentialRampToValueAtTime(200,t+duration);
+ o.connect(lp);lp.connect(a);a.connect(filter);
+ a.gain.setValueAtTime(.0001,t);
+ a.gain.linearRampToValueAtTime(accent?.019:.013,t+.012);
+ a.gain.exponentialRampToValueAtTime(.0001,t+duration);
+ o.start(t);o.stop(t+duration+.015);
+}
+function voice(freq,t,duration,partials,peak,attack,release,destination=filter){
+ const amp=ctx.createGain(),tone=ctx.createBiquadFilter();tone.type='lowpass';tone.frequency.setValueAtTime(3800,t);tone.connect(amp);amp.connect(destination);
+ amp.gain.setValueAtTime(.0001,t);amp.gain.linearRampToValueAtTime(peak,t+attack);amp.gain.setValueAtTime(peak,t+Math.max(attack+.02,duration-release));amp.gain.exponentialRampToValueAtTime(.0001,t+duration);
+ partials.forEach(([ratio,level,type,detune])=>{const o=ctx.createOscillator(),v=ctx.createGain();o.type=type||'sine';o.frequency.setValueAtTime(freq*ratio,t);o.detune.value=detune||0;v.gain.value=level;o.connect(v);v.connect(tone);o.start(t);o.stop(t+duration+.02)});
+ return tone;
+}
+// v0.6: distant, softened bell; its long tail enters the existing reverb bus.
+function bell(t,m){
+ const t0=t,f=hz(m),amp=ctx.createGain(),lp=ctx.createBiquadFilter();
+ lp.type='lowpass';lp.frequency.setValueAtTime(2400,t0);lp.frequency.exponentialRampToValueAtTime(900,t0+3.8);
+ lp.connect(amp);amp.connect(filter);
+ amp.gain.setValueAtTime(.0001,t0);amp.gain.linearRampToValueAtTime(.014,t0+.045);
+ amp.gain.exponentialRampToValueAtTime(.0001,t0+5.8);
+ [[1,1],[2.005,.09],[3.01,.025]].forEach(([ratio,level])=>{
+  const o=ctx.createOscillator(),v=ctx.createGain();o.type='sine';o.frequency.setValueAtTime(f*ratio,t0);v.gain.value=level;o.connect(v);v.connect(lp);o.start(t0);o.stop(t0+5.85);
+ });pulse(t,.12)
+}
+function piano(t,m,velocity=.8){const f=hz(m),a=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.setValueAtTime(5100,t);lp.frequency.exponentialRampToValueAtTime(1000,t+2.7);lp.connect(a);a.connect(filter);a.gain.setValueAtTime(.0001,t);a.gain.exponentialRampToValueAtTime(.043*velocity,t+.008);a.gain.exponentialRampToValueAtTime(.013*velocity,t+.19);a.gain.exponentialRampToValueAtTime(.0001,t+4.1);
+ [[1,1],[2,.29],[3,.13],[4,.055]].forEach(([mult,vol])=>{const o=ctx.createOscillator(),v=ctx.createGain();o.type='sine';o.frequency.setValueAtTime(f*mult*(mult>1?1+.00035*mult:1),t);v.gain.value=vol;o.connect(v);v.connect(lp);o.start(t);o.stop(t+4.13)});pulse(t,.25)}
+function dreamPad(t,notes){notes.forEach((n,i)=>{const f=hz(n),amp=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.setValueAtTime(780+i*110,t);lp.frequency.linearRampToValueAtTime(1450+i*120,t+4.5);lp.frequency.linearRampToValueAtTime(620+i*80,t+10);lp.connect(amp);amp.connect(filter);amp.gain.setValueAtTime(.0001,t);amp.gain.linearRampToValueAtTime(.036,t+2.1);amp.gain.setValueAtTime(.036,t+6.1);amp.gain.linearRampToValueAtTime(.0001,t+10.8);[-7,0,7].forEach((det,j)=>{const o=ctx.createOscillator(),v=ctx.createGain();o.type=j===1?'triangle':'sawtooth';o.frequency.setValueAtTime(f,t);o.detune.value=det;v.gain.value=j===1?.38:.12;o.connect(v);v.connect(lp);o.start(t);o.stop(t+10.85)})});pulse(t,.15)}
+function sciFiPad(t,notes){notes.slice(0,2).forEach((n,i)=>{const f=hz(n+12),carrier=ctx.createOscillator(),mod=ctx.createOscillator(),modGain=ctx.createGain(),amp=ctx.createGain(),lp=ctx.createBiquadFilter();carrier.type='sine';carrier.frequency.value=f;mod.type='sine';mod.frequency.value=f*(i?1.503:2.004);modGain.gain.setValueAtTime(1,t);modGain.gain.linearRampToValueAtTime(f*.23,t+3);modGain.gain.linearRampToValueAtTime(f*.06,t+9);mod.connect(modGain);modGain.connect(carrier.frequency);lp.type='lowpass';lp.frequency.setValueAtTime(1600,t);lp.frequency.linearRampToValueAtTime(2800,t+5);carrier.connect(lp);lp.connect(amp);amp.connect(filter);amp.gain.setValueAtTime(.0001,t);amp.gain.linearRampToValueAtTime(.029,t+2.7);amp.gain.setValueAtTime(.029,t+6);amp.gain.linearRampToValueAtTime(.0001,t+10);carrier.start(t);mod.start(t);carrier.stop(t+10.05);mod.stop(t+10.05)});pulse(t,.12)}
+
+// A softly bowed, synthetic string ensemble, with slow attack and gentle vibrato.
+function violinChord(t,notes){
+ notes.forEach((m,i)=>{
+  const f=hz(m),amp=ctx.createGain(),lp=ctx.createBiquadFilter();
+  lp.type='lowpass';lp.frequency.setValueAtTime(1250+i*100,t);lp.frequency.linearRampToValueAtTime(2050+i*100,t+4);
+  lp.connect(amp);amp.connect(filter);
+  amp.gain.setValueAtTime(.0001,t);amp.gain.linearRampToValueAtTime(.033,t+2.5);
+  amp.gain.setValueAtTime(.033,t+7.1);amp.gain.linearRampToValueAtTime(.0001,t+11.8);
+  [-5,5].forEach(det=>{
+   const o=ctx.createOscillator(),v=ctx.createOscillator(),vg=ctx.createGain(),mix=ctx.createGain();
+   o.type='sawtooth';o.frequency.setValueAtTime(f,t);o.detune.value=det;
+   v.type='sine';v.frequency.value=4.1+i*.35;vg.gain.value=2.4;
+   v.connect(vg);vg.connect(o.detune);mix.gain.value=.25;
+   o.connect(mix);mix.connect(lp);o.start(t);v.start(t);o.stop(t+11.85);v.stop(t+11.85);
+  });
+ });
+}
+// v0.10: the violin may answer the sustained chords with a quiet,
+// chord-aware melodic phrase. One stable four-bar motif is repeated before
+// gently changing; notes remain in a narrow register with close voice leading.
+let violinPhrase=[[],[6],[3,11],[8]],violinLast=-1,violinPhraseNumber=-1;
+function violinMelody(t,m){
+ const f=hz(m),amp=ctx.createGain(),lp=ctx.createBiquadFilter();
+ lp.type='lowpass';lp.frequency.setValueAtTime(1050,t);
+ lp.frequency.linearRampToValueAtTime(1650,t+1.2);
+ lp.connect(amp);amp.connect(filter);
+ amp.gain.setValueAtTime(.0001,t);
+ amp.gain.linearRampToValueAtTime(.014,t+.38);
+ amp.gain.setValueAtTime(.014,t+1.05);
+ amp.gain.exponentialRampToValueAtTime(.0001,t+2.15);
+ [-4,4].forEach(det=>{
+  const o=ctx.createOscillator(),v=ctx.createOscillator(),vg=ctx.createGain(),mix=ctx.createGain();
+  o.type='sawtooth';o.frequency.setValueAtTime(f,t);o.detune.value=det;
+  v.type='sine';v.frequency.value=4.6;vg.gain.value=2.1;
+  v.connect(vg);vg.connect(o.detune);mix.gain.value=.17;
+  o.connect(mix);mix.connect(lp);o.start(t);v.start(t);
+  o.stop(t+2.2);v.stop(t+2.2);
+ });
+}
+function refreshViolinPhrase(){
+ const patterns=[[[],[6],[3,11],[8]],[[4],[10],[],[6,12]],[[6,13],[],[4],[10]],[[3],[8],[5,12],[]]];
+ const next=choose(patterns);
+ violinPhrase=violinPhrase.map((part,i)=>Math.random()<.6?part.slice():next[i].slice());
+}
+function violinNoteForChord(){
+ const candidates=chords[seed].flatMap(n=>[12,24].map(o=>root+n+o)).filter(n=>n>=58&&n<=72);
+ const nearby=violinLast<0?candidates:candidates.filter(n=>Math.abs(n-violinLast)<=5);
+ const pool=nearby.length?nearby:candidates;
+ const note=pool[Math.floor(Math.random()*pool.length)];violinLast=note;return note;
+}
+// v0.11: a separate airy pad for the percussion-free passages only.
+// It shares the current chord but stays softer than the main Dream Pad.
+function interludePad(t,notes){
+ notes.forEach((m,i)=>{
+  const f=hz(m+12),amp=ctx.createGain(),lp=ctx.createBiquadFilter();
+  lp.type='lowpass';lp.frequency.setValueAtTime(560+i*90,t);
+  lp.frequency.linearRampToValueAtTime(1100+i*100,t+5);
+  lp.frequency.linearRampToValueAtTime(600+i*70,t+9);
+  lp.connect(amp);amp.connect(filter);
+  amp.gain.setValueAtTime(.0001,t);
+  amp.gain.linearRampToValueAtTime(.017,t+3.1);
+  amp.gain.setValueAtTime(.017,t+6.3);
+  amp.gain.exponentialRampToValueAtTime(.0001,t+10.5);
+  [-5,5].forEach(det=>{
+   const o=ctx.createOscillator(),mix=ctx.createGain();
+   o.type='sine';o.frequency.setValueAtTime(f,t);o.detune.value=det;
+   mix.gain.value=.43;o.connect(mix);mix.connect(lp);
+   o.start(t);o.stop(t+10.55);
+  });
+ });
+}
+// v0.12: a clearly audible, lyrical violin solo reserved for drum breaks.
+// The solo follows the same harmony as the pads, with a stable two-bar phrase,
+// close melodic movement, and a distinct foreground gain envelope.
+let soloLast=-1,soloMotif=0;
+function soloViolin(t,m,duration=1.65){
+ const f=hz(m),amp=ctx.createGain(),lp=ctx.createBiquadFilter();
+ lp.type='lowpass';lp.frequency.setValueAtTime(1250,t);
+ lp.frequency.linearRampToValueAtTime(2300,t+.7);
+ lp.connect(amp);amp.connect(filter);
+ amp.gain.setValueAtTime(.0001,t);
+ amp.gain.linearRampToValueAtTime(.042,t+.22);
+ amp.gain.setValueAtTime(.038,t+Math.max(.35,duration-.5));
+ amp.gain.exponentialRampToValueAtTime(.0001,t+duration);
+ [-5,5].forEach(det=>{
+  const o=ctx.createOscillator(),v=ctx.createOscillator(),vg=ctx.createGain(),mix=ctx.createGain();
+  o.type='sawtooth';o.frequency.setValueAtTime(f,t);o.detune.value=det;
+  v.type='sine';v.frequency.value=5;vg.gain.value=3.2;
+  v.connect(vg);vg.connect(o.detune);mix.gain.value=.29;
+  o.connect(mix);mix.connect(lp);o.start(t);v.start(t);
+  o.stop(t+duration+.03);v.stop(t+duration+.03);
+ });
+}
+function soloPitch(barInBreak,position){
+ const chord=chords[seed];
+ const pool=chord.flatMap(n=>[12,24].map(o=>root+n+o)).filter(n=>n>=59&&n<=74).sort((a,b)=>a-b);
+ // Two related motifs alternate, rather than choosing random notes every beat.
+ const contour=[[0,1,2,1,0,1,2,1],[0,1,1,2,1,0,1,0]][soloMotif];
+ const index=contour[(barInBreak*2+position)%contour.length];
+ const target=pool[Math.min(pool.length-1,Math.floor(pool.length/2)-1+index)];
+ const close=pool.filter(n=>soloLast<0||Math.abs(n-soloLast)<=7);
+ const pitch=close.length?close.reduce((best,n)=>Math.abs(n-target)<Math.abs(best-target)?n:best,close[0]):target;
+ soloLast=pitch;return pitch;
+}
+// v0.14: sustained bass pad, one soft envelope per bar.
+function bass(t,m){
+ const duration=60/bpm*4,release=1.25;
+ const f=hz(m),a=ctx.createGain(),lp=ctx.createBiquadFilter();
+ lp.type='lowpass';lp.frequency.setValueAtTime(260,t);
+ lp.frequency.linearRampToValueAtTime(390,t+duration*.5);
+ lp.frequency.linearRampToValueAtTime(260,t+duration+release);
+ lp.Q.value=.45;lp.connect(a);a.connect(filter);
+ a.gain.setValueAtTime(.0001,t);
+ a.gain.linearRampToValueAtTime(.031,t+Math.min(.8,duration*.3));
+ a.gain.setValueAtTime(.031,t+duration*.72);
+ a.gain.exponentialRampToValueAtTime(.0001,t+duration+release);
+ [[1,.7,'sine',-3],[1,.3,'triangle',3],[2,.10,'sine',0]].forEach(([ratio,level,type,detune])=>{
+  const o=ctx.createOscillator(),v=ctx.createGain();
+  o.type=type;o.frequency.setValueAtTime(f*ratio,t);o.detune.value=detune;
+  v.gain.value=level;o.connect(v);v.connect(lp);o.start(t);o.stop(t+duration+release+.03);
+ });
+}
+let pulses=[];function pulse(t,strength){pulses.push({t,s:strength});if(pulses.length>80)pulses.shift()}// v0.6: stable eight-bar phrases. The pulse is dependable; texture evolves above it.
+let phraseMotif=[0,1,2,1],phraseOffset=0,arrangement=0,pianoPattern=[4,10,14],lastPiano=-1;
+// v0.6: breathing rhythm. The 32-bar cycle returns to its original pulse.
+// Density and evolution shape the wave without changing BPM or the approved visual engine.
+// Motif memory: retain a 4-bar phrase for 16 bars, then gently mutate it.
+let motifStart=3, melodicCycle=16;
+let lastBell=-1;
+let pianoSteps=[[2,9],[5,12],[2,7,14],[6,11]];
+let bellSteps=[[],[14],[],[10]];
+function refreshMotif(){
+ const options=[[[2,9],[5,12],[2,7,14],[6,11]],[[0,7],[4,11],[3,10,14],[6,12]],[[3,10],[2,8,14],[5,12],[4,11]],[[2,6,13],[7,11],[3,10],[6,14]]];
+ const next=choose(options).map(a=>a.slice());
+ // Most of the next phrase is inherited, rather than generated from scratch.
+ pianoSteps=pianoSteps.map((old,i)=>Math.random()<.65?old.slice():next[i]);
+ bellSteps=[[],[14],[],[10]];
+ if(Math.random()<.45)bellSteps=choose([[[],[14],[],[10]],[[12],[],[14],[]],[[],[10],[],[14]]]).map(a=>a.slice());
+}
+let rhythmWave=0, rhythmCycle=32;
+// Occasional 8-bar percussion-free passages (~21 seconds at 91 BPM).
+let beatBreakStart=-1, nextBeatBreak=40;
+let nextAcidBar=27,acidBarsLeft=0,acidPhraseBar=0;
+function rhythmicLevel(barNumber){
+ const phase=((barNumber-1)%rhythmCycle)/rhythmCycle;
+ const swell=Math.pow(Math.sin(Math.PI*phase),2);
+ return Math.max(0,Math.min(1,swell*(.55+.45*evolution)));
+}
+function schedule(t,s){
+ const pos=s%16;
+ if(pos===0){
+  bar++;rhythmWave=rhythmicLevel(bar);
+  if(bar===nextBeatBreak){beatBreakStart=bar;nextBeatBreak=bar+choose([40,48,56,64]);soloLast=-1;soloMotif=Math.floor(Math.random()*2);}
+  const beatBreakActive=beatBreakStart>=0&&bar>=beatBreakStart&&bar<beatBreakStart+8;$('measure').textContent='BAR '+bar;
+  $('scene').textContent=bar===1?'FIRST PULSE':bar<3?'AWAKENING':['BLOOM','DRIFT','RESONANCE','STARDUST'][mode];
+  // Preserve the eight-bar harmonic memory; rotate instrumentation on longer phrases.
+  if(bar>3&&(bar-4)%8===0){
+   seed=(seed+choose([1,1,2]))%chords.length;
+   if(Math.random()<evolution*.65)mode=(mode+1)%4;
+   phraseMotif=Array.from({length:4},()=>Math.floor(Math.random()*3));
+   phraseOffset=choose([0,0,1]);
+   // Piano/bell rhythms no longer reset at every harmonic change.
+   if(Math.random()<.55)arrangement=(arrangement+1)%4;
+  }
+  if(bar>=3 && (bar-3)%melodicCycle===0 && bar>3)refreshMotif();
+  if(bar>=3&&bar%4===3){
+   const harmony=chords[seed].map(n=>root+n+12);
+   // The dream pad remains the foundation, while the secondary voices trade places.
+   dreamPad(t,harmony);
+   if(bar>=7 && (arrangement===1||arrangement===3||bar%16===7))violinChord(t,harmony);
+   if(bar>=7 && (arrangement===2||arrangement===3) && bar%8===7)sciFiPad(t,harmony);
+  }
+ }
+ const beatIsSilent=beatBreakStart>=0&&bar>=beatBreakStart&&bar<beatBreakStart+8;
+ // Shimmer visits for sixteen bars per 64-bar cycle; original pads remain intact.
+ if(bar>=19&&pos===0&&bar%4===3&&((bar-19)%64)<16){
+  shimmerPad(t,chords[seed].map(n=>root+n+12));
+ }
+ // Four-bar acid visit, with a fixed rhythmic motif. No notes in drum breaks.
+ if(pos===0){
+  if(bar>=nextAcidBar&&acidBarsLeft===0){acidBarsLeft=4;acidPhraseBar=0;}
+  if(!beatIsSilent&&acidBarsLeft>0){
+   acidPhraseBar=4-acidBarsLeft;acidBarsLeft--;
+   if(acidBarsLeft===0)nextAcidBar=bar+45;
+  }
+ }
+ const acidActive=!beatIsSilent&&(acidBarsLeft>0||bar===nextAcidBar-45);
+ if(acidActive&&[0,3,6,8,11,14].includes(pos)){
+  const degree=[0,0,1,0,2,1][[0,3,6,8,11,14].indexOf(pos)];
+  acidNote(t,root+chords[seed][degree],pos===0||pos===8,acidPhraseBar);
+ }
+
+ // Give each existing eight-bar drum break a quiet harmonic interlude.
+ // Start on its first bar, then refresh gently at its midpoint; no drum rules change.
+ if(beatIsSilent&&pos===0&&(bar===beatBreakStart||bar===beatBreakStart+4)){
+  interludePad(t,chords[seed].map(n=>root+n+12));
+ }
+ // The original heartbeat is the home motif. Additional accents enter and leave
+ // gradually, with stable phase-based probabilities rather than new random grooves.
+ if(!beatIsSilent&&pos===0)kick(t);
+ if(!beatIsSilent&&bar>1&&pos===8&&Math.random()<(.92-.22*rhythmWave))kick(t);
+ if(bar>=3){
+  if(!beatIsSilent&&(pos===2||pos===10)&&Math.random()<(.18+.52*rhythmWave)*(.6+density))hat(t);
+  if(!beatIsSilent&&(pos===6||pos===14)&&Math.random()<(.08+.67*rhythmWave)*(.6+density))hat(t);
+  if(!beatIsSilent&&(pos===4||pos===12)&&Math.random()<rhythmWave*.26*density)hat(t);
+  if(pos===0)bass(t,root+chords[seed][0]-12);
+ }
+
+ // Quiet violin counter-melody: follows the current pad chord, with a
+ // four-bar motif retained across several cycles. The sustained violin chords
+ // and all existing arrangement rules above are unchanged.
+ if(bar>=11 && !beatIsSilent && (arrangement===1||arrangement===3||bar%16>=7&&bar%16<=10)){
+  const phraseNumber=Math.floor((bar-11)/4);
+  if(phraseNumber!==violinPhraseNumber){
+   violinPhraseNumber=phraseNumber;
+   if(phraseNumber>0&&phraseNumber%4===0)refreshViolinPhrase();
+  }
+  const phraseBar=(bar-11)%4;
+  if(violinPhrase[phraseBar].includes(pos))violinMelody(t,violinNoteForChord());
+ }
+
+ // Melodic voices enter only after the harmonic atmosphere is established.
+ // Both voices follow the CURRENT pad/violin chord, using close voice leading.
+ if(bar>=9){
+  const phraseBar=(bar-9)%4;
+  const cycleIndex=Math.floor((bar-9)/4);
+  if(pianoSteps[phraseBar].includes(pos)){
+   const chord=chords[seed];
+   const choices=chord.flatMap(n=>[-12,0,12,24].map(o=>root+n+o)).filter(n=>n>=56&&n<=72);
+   const preferred=choices.filter(n=>Math.abs(n-lastPiano)<=5);
+   const pool=lastPiano<0?choices:(preferred.length?preferred:choices);
+   const target=pool[(phraseBar+pianoSteps[phraseBar].indexOf(pos)+phraseMotif[phraseBar])%pool.length];
+   lastPiano=target;
+   piano(t,target,random(.22,.34));
+  }
+  if(bar>=13&&bellSteps[phraseBar].includes(pos)){
+   const choices=chords[seed].flatMap(n=>[12,24].map(o=>root+n+o)).filter(n=>n>=65&&n<=79);
+   const nearby=choices.filter(n=>Math.abs(n-lastBell)<=5);
+   const pool=lastBell<0?choices:(nearby.length?nearby:choices);
+   const note=pool[(phraseBar+cycleIndex)%pool.length];
+   lastBell=note;
+   bell(t,note);
+  }
+ }
+
+}
+function tick(){if(!started||!ctx)return;let now=ctx.currentTime;while(nextTime<now+.16){schedule(nextTime,step);step++;nextTime+=60/bpm/4}if(nextTime<now-.5)nextTime=now+.04}async function start(){if(started)return;try{if(!ctx)setup();await ctx.resume();started=true;step=0;bar=0;rhythmWave=0;beatBreakStart=-1;nextBeatBreak=40;nextAcidBar=27;acidBarsLeft=0;acidPhraseBar=0;mode=0;seed=Math.floor(Math.random()*4);arrangement=0;lastPiano=-1;lastBell=-1;violinLast=-1;soloLast=-1;soloMotif=0;violinPhraseNumber=-1;violinPhrase=[[],[6],[3,11],[8]];pianoPattern=[4,10,14];pianoSteps=[[2,9],[5,12],[2,7,14],[6,11]];bellSteps=[[],[14],[],[10]];nextTime=ctx.currentTime+.08;pulses=[];timer=setInterval(tick,25);tick();$('start').disabled=true;$('stop').disabled=false;$('status').textContent='De machine componeert…'}catch(e){$('status').textContent='Audio kon niet starten: '+e.message}}async function stop(){if(!started)return;started=false;clearInterval(timer);timer=null;await ctx.suspend();$('start').disabled=false;$('stop').disabled=true;$('scene').textContent='SILENCE';$('status').textContent='Gestopt · druk START om opnieuw te beginnen'}$('start').onclick=start;$('stop').onclick=stop;[['bpm',v=>{bpm=+v;updateFx();}],['density',v=>density=v/100],['evolution',v=>evolution=v/100],['reverb',v=>{reverb=v/100;updateFx()}]].forEach(([id,fn])=>{$(id).addEventListener('input',e=>{fn(+e.target.value);$(id+'V').textContent=e.target.value+(id==='bpm'?' BPM':'%')})});
+const art=document.createElement('canvas');art.width=600;art.height=600;
+const ctxArt=art.getContext('2d');
+let n=240,factor=2,speed=1,color='rainbow',holo=false,depth=false,layers=2,merge=true,elapsed=0,lastFrame=0;
+const TAU=Math.PI*2;
+function drawCardio(){
+ const g=ctxArt,cx=300,cy=300,r=252;
+ g.fillStyle='#080d18';g.fillRect(0,0,600,600);
+ const pts=Array.from({length:n},(_,i)=>{const a=i*TAU/n-Math.PI/2;return [cx+Math.cos(a)*r,cy+Math.sin(a)*r]});
+ const f=factor+elapsed*.22;g.lineWidth=.65;
+ for(let layer=0;layer<layers;layer++){
+ // Layer 0 stays original; the other two start visibly separated and rotate oppositely.
+ // Every 20 animation seconds, the patterns gently converge, briefly align, then separate.
+ const phase=elapsed%20;
+ const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t)};
+ const convergence=merge?smooth((phase-13)/3)*(1-smooth((phase-17)/3)):0;
+ const baseRotation=layer===0?0:layer===1?(-0.22-elapsed*.19):(0.32+elapsed*.15);
+ const baseFactor=layer===0?f:layer===1?(factor+0.65-elapsed*.22):(factor+1.35+elapsed*.18);
+ const rotation=baseRotation*(1-convergence);
+ const lf=baseFactor+(f-baseFactor)*convergence;
+ const opacity=layers===1?1:(layers===2?.72:.56);
+ g.save();g.translate(cx,cy);g.rotate(rotation);g.translate(-cx,-cy);
+ for(let i=0;i<n;i++){
+  const j=((i*lf)%n+n)%n,k=Math.floor(j),u=j-k,p=pts[i],q=pts[k],v=pts[(k+1)%n];
+  g.globalAlpha=opacity;
+  g.strokeStyle=color==='rainbow'?`hsla(${(i/n*360+elapsed*12)%360},90%,68%,.45)`:color==='white'?'rgba(245,248,255,.38)':'rgba(70,220,255,.45)';
+  const tx=q[0]*(1-u)+v[0]*u,ty=q[1]*(1-u)+v[1]*u;
+   if(holo && color==='rainbow'){
+    const hue=(i/n*360+elapsed*12)%360;
+    for(const [offset,shift,alpha] of [[-1.5,28,.18],[1.5,-28,.18]]){
+     g.strokeStyle=`hsla(${(hue+shift+360)%360},100%,72%,${alpha})`;
+     g.beginPath();g.moveTo(p[0]+offset,p[1]);g.lineTo(tx+offset,ty);g.stroke();
+    }
+    g.strokeStyle=`hsla(${hue},90%,68%,.45)`;
+   }
+   if(depth && color==='rainbow'){
+    // Three translucent layers: slight chromatic separation and slow parallax.
+    const hue=(i/n*360+elapsed*12)%360;
+    const phase=elapsed*.42;
+    const dx=2.6*Math.sin(phase)+1.2*Math.cos(i/n*TAU);
+    const dy=2.0*Math.cos(phase*.83)+1.2*Math.sin(i/n*TAU);
+    g.lineWidth=.48;
+    g.strokeStyle=`hsla(${(hue+32)%360},95%,64%,.16)`;
+    g.beginPath();g.moveTo(p[0]-dx,p[1]-dy);g.lineTo(tx-dx,ty-dy);g.stroke();
+    g.strokeStyle=`hsla(${(hue+328)%360},95%,64%,.16)`;
+    g.beginPath();g.moveTo(p[0]+dx,p[1]+dy);g.lineTo(tx+dx,ty+dy);g.stroke();
+    g.lineWidth=.65;
+    g.strokeStyle=`hsla(${hue},90%,68%,.45)`;
+   }
+   g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(tx,ty);g.stroke();
+ }
+ g.restore();
+ g.strokeStyle='rgba(255,255,255,.25)';g.lineWidth=1;g.beginPath();g.arc(cx,cy,r,0,TAU);g.stroke();
+ g.fillStyle='#fff';for(const p of pts){g.beginPath();g.arc(p[0],p[1],1.3,0,TAU);g.fill()}
+}
+}
+function animate(now){requestAnimationFrame(animate);
+ const dt=lastFrame?Math.min(.06,(now-lastFrame)/1000):0;lastFrame=now;
+ // The authentic cardioid engine evolves continuously, including during silence.
+ elapsed+=dt*speed;
+ const t=now*.001,w=width,h=height;
+ let intensity=0;
+ if(started&&ctx){const ct=ctx.currentTime;pulses=pulses.filter(p=>ct-p.t<1.4);for(const p of pulses){const age=ct-p.t;if(age>=0)intensity+=p.s*Math.exp(-age*5)}energy=energy*.86+intensity*.14}else energy*=.95;
+ drawCardio();g.clearRect(0,0,w,h);g.fillStyle='#080d18';g.fillRect(0,0,w,h);
+ const side=Math.min(w*.94,h*.96),x=(w-side)/2,y=(h-side)/2;
+ g.save();g.shadowBlur=8+energy*26;g.shadowColor='rgba(120,180,255,.65)';g.drawImage(art,x,y,side,side);g.restore();
+}
+requestAnimationFrame(animate);})();
 </script></body></html>
