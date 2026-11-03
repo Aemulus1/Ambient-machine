@@ -119,7 +119,7 @@ function updateNatureAutoStatus(){
 let natureAutoLabel='';
 function nextNatureRound(){
  natureAutoLabel=chooseNatureSet();
- const duration=(2+natureRound)*60*1000;
+ const duration=(1+natureRound)*60*1000;
  natureDeadline=Date.now()+duration;natureRound++;
  updateNatureAutoStatus();
 }
